@@ -21,7 +21,7 @@ def get_url(from_date, to_date):
 base_path = os.path.dirname(os.path.abspath(__file__)) 
 sqlite_path = os.path.join(base_path, "BaseGovData.db")
 
-default_fetch_interval = 2
+default_fetch_interval = 15
 fetch_interval = default_fetch_interval
 
 conn = sqlite3.connect(sqlite_path)
