@@ -5,6 +5,9 @@ import csv
 import pandas as pd 
 import datetime
 import io
+from random import randint
+import time
+
 
 def get_url(from_date, to_date):
     return ("http://www.base.gov.pt/base2/rest/contratos.csv?texto=&tipo=0&tipocontrato=0"
@@ -18,7 +21,8 @@ def get_url(from_date, to_date):
 base_path = os.path.dirname(os.path.abspath(__file__)) 
 sqlite_path = os.path.join(base_path, "BaseGovData.db")
 
-fetch_interval_days = 30
+default_fetch_interval = 2
+fetch_interval = default_fetch_interval
 
 conn = sqlite3.connect(sqlite_path)
 
@@ -27,38 +31,59 @@ cursor = conn.cursor()
 cursor.execute('SELECT COUNT(*) FROM contratos')
 count = cursor.fetchone()[0]
 
-edate = datetime.datetime.strptime("2008-01-01", "%Y-%m-%d") 
+if count > 0:
 
-while edate < (datetime.datetime.now - datetime.timedelta(days=1)):
+    # get latest insert date
+    cursor = conn.cursor()
+    cursor.execute('SELECT _insertdate FROM contratos ORDER BY _id DESC LIMIT 1')
+    d = cursor.fetchone()[0]
 
-    if count > 0:
+    last_insert_date = datetime.datetime.strptime(d, "%Y-%m-%d %H:%M:%S")
 
-        # get latest insert date
-        cursor = conn.cursor()
-        cursor.execute('SELECT _insertdate FROM contratos ORDER BY _id DESC LIMIT 1')
+    sdate = (last_insert_date + datetime.timedelta(days=1))
 
-        last_insert_date = datetime.datetime.strptime(cursor.fetchone()[0], "%Y-%m-%d")
+else:
+    sdate = datetime.datetime.strptime("2008-01-01", "%Y-%m-%d") 
 
-        sdate = (last_insert_date + datetime.timedelta(days=1))
+edate = sdate + datetime.timedelta(days=fetch_interval)
 
-    else:
-        sdate = datetime.datetime.strptime("2008-01-01", "%Y-%m-%d") 
+while edate <= (datetime.datetime.now() - datetime.timedelta(days=1)):
+    edate = sdate + datetime.timedelta(days=fetch_interval)
 
-    edate = sdate + datetime.timedelta(days=fetch_interval_days)
+    print ("Request at " + datetime.datetime.now().strftime("%Y-%m-%d %H:%M")  + ":   " + sdate.strftime("%Y-%m-%d") + " to " + edate.strftime("%Y-%m-%d"))
 
     url = get_url(sdate.strftime("%Y-%m-%d"), edate.strftime("%Y-%m-%d"))
 
-    r = requests.get(url)
+    try:
+        r = requests.get(url, timeout =300)
+    except Exception as e:
+        print ("    ### Failure. Could not connect. Retying in 5 seconds. Error: {0}".format(e) )
+        time.sleep(5)
+        continue
+
     data = r.content.decode('utf-8')
 
-    df = pd.read_csv(io.StringIO(data), sep=";")
+    if r.status_code >= 500:
+        new_interval = fetch_interval - 1
+        fetch_interval = new_interval if new_interval >= 0 else default_fetch_interval
+        print ("    ### Failure. No data returned. Retying with interval of {0} days. Status: {1}".format(fetch_interval, r.status_code) )
+        continue
+    
+    try:
+        df = pd.read_csv(io.StringIO(data), sep=";")
 
-    df['_insertdate'] = edate
+        df['_insertdate'] = edate
 
-    df.columns = df.columns.str.replace('\s+', '')
+        df.columns = df.columns.str.replace('\s+', '')
 
-    df.to_sql("contratos", conn, flavor="sqlite", if_exists="append", index=False)
+        df.to_sql("contratos", conn, if_exists="append", index=False)
 
-    print (sdate, edate)
+    except:
+        fetch_interval = randint(1,30)        
+        print ("    ### Failure. Error parsing or inserting data. Retying with interval of {0} days. Status:{1}, Data:\n{2}".format(fetch_interval, r.status_code, data) )
+        continue
+
+    sdate = edate + datetime.timedelta(days=1)
+    fetch_interval = default_fetch_interval
 
 conn.close()
