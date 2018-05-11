@@ -14,6 +14,7 @@ sqlite_name = "BaseGovData.db"
 base_url = 'http://www.base.gov.pt/base2/rest/contratos'
 docs_url = 'http://www.base.gov.pt/base2/rest/documentos'
 
+
 # global
 _db_conn = None
 def get_db_connection():
@@ -32,14 +33,14 @@ def get_range_limit():
 
 def get_contracts_request(from_range, to_range):    
     headers = {'Range': '{}-{}'.format(from_range, to_range)}
-    return requests.get(base_url, headers=headers).content.decode('utf-8')
+    return requests.get(base_url, headers=headers, timeout=1.0).content.decode('utf-8')
 
 def get_contract_ids_from_range_response(response):
     j = json.loads(response)
     return [contract['id'] for contract in j]
 
-def get_contract(contract_id):
-    r = requests.get("{}/{}".format(base_url, contract_id))
+def get_contract(contract_id, timeout):
+    r = requests.get("{}/{}".format(base_url, contract_id),  timeout=timeout)
     res = r.content.decode('utf-8')
     return json.loads(res)
 
@@ -69,9 +70,9 @@ def contract_exists_in_db(contract_id):
 
 def add_contract_to_database(contract_id, contract_response):
 
-    def normalizeCurrency(money):
-        if money is not None:
-            normalized = re.sub(r'^((\d+)\.)?(\d+),(\d+) €$', r'\2\3.\4', money)
+    def normalizeCurrency(money):        
+        if isinstance(money, str):
+            normalized = money.replace('€','').replace('.','').strip().replace(' ', '').replace(',','.')
         else:
             normalized = 0.0
         return float(normalized)
@@ -210,7 +211,7 @@ def update_range_history_in_db(from_range, to_range, nr_contracts, successful_co
     
     get_db_connection().commit()
 
-def iterate_range(from_range, to_range):
+def iterate_range(from_range, to_range, timeout):
     print ("Iterating range {0} - {1}: {2:.2f}%".format(from_range, to_range, from_range/get_range_limit()*100))
 
     try:
@@ -225,14 +226,12 @@ def iterate_range(from_range, to_range):
     for contract_id in contract_ids_list:
         print ("\rContract: {}".format(contract_id), end='')
         
-
         if contract_exists_in_db(contract_id):
             successful_contracts_count += 1
             continue
 
         try:
-            contract_response = get_contract(contract_id)
-            time.sleep(0.2)
+            contract_response = get_contract(contract_id, timeout)
         except Exception as e:
             print ("    ### Failure. Error getting contract {0}. Error: {1}".format(contract_id, e) )
             continue
@@ -252,11 +251,17 @@ def iterate_range(from_range, to_range):
     return True
 
 def iter_past():
+    print("Repeating: ", end='')
     rng = get_incomplete_range()
-    while not isinstance(rng, bool):
-        iterate_range(rng[0], rng[1], )
 
+    while not isinstance(rng, bool):
+        iterate_range(rng[0], rng[1], timeout=5)
+
+        new_rng = get_incomplete_range()
+        if new_rng == rng:
+            break
         rng = get_incomplete_range()
+
 
 def iter_next():
     range_limit = get_range_limit()
@@ -265,7 +270,7 @@ def iter_next():
     while range_start < range_limit:
         step = min([requests_range_step, range_limit - range_start])
 
-        result = iterate_range(range_start, range_start + step)
+        result = iterate_range(range_start, range_start + step, timeout=0.5)
 
         if result == True:
             range_start += step 
@@ -273,9 +278,18 @@ def iter_next():
         iter_past() # make another pass to try and insert the ones that failed
 
 
+def iter_all():
+    range_limit = get_range_limit()
+    range_start = 0
+    while range_start < range_limit:
+        step = min([requests_range_step, range_limit - range_start])
+        result = iterate_range(range_start, range_start + step, timeout=1)
+        if result == True:
+            range_start += step 
+
+
 def main():    
     iter_next()
-
 
 
 if __name__ == '__main__':
