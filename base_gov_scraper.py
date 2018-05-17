@@ -28,12 +28,17 @@ _range_limit = None
 def get_range_limit():
     global _range_limit
     if _range_limit is None:
-        _range_limit = 868250 # TODO    
+        try:
+            r = requests.get(base_url)
+            content_range = r.headers['Content-Range']
+            _range_limit = int(content_range.split('/')[1])  
+        except:
+            get_range_limit()
     return _range_limit
-
+            
 def get_contracts_request(from_range, to_range):    
     headers = {'Range': '{}-{}'.format(from_range, to_range)}
-    return requests.get(base_url, headers=headers, timeout=1.0).content.decode('utf-8')
+    return requests.get(base_url, headers=headers, timeout=60).content.decode('utf-8')
 
 def get_contract_ids_from_range_response(response):
     j = json.loads(response)
@@ -52,10 +57,10 @@ def get_last_requested_range():
         return 0
     return res[0]
 
-def get_incomplete_range():
+def get_incomplete_range(iteration):
     cursor = get_db_connection().cursor()
-    cursor.execute('SELECT from_range, to_range FROM scrape_history WHERE successful_count < contracts_count LIMIT 1')
-    res = cursor.fetchone()
+    cursor.execute('SELECT from_range, to_range FROM scrape_history WHERE successful_count < contracts_count LIMIT ' + str(iteration))
+    res = cursor.fetchall().pop()
     if not res:
         return False
     return [res[0],res[1]]
@@ -252,15 +257,19 @@ def iterate_range(from_range, to_range, timeout):
 
 def iter_past():
     print("Repeating: ", end='')
-    rng = get_incomplete_range()
+    
+    iter_count = 1
+    rng = get_incomplete_range(iter_count)
 
     while not isinstance(rng, bool):
-        iterate_range(rng[0], rng[1], timeout=5)
+        iterate_range(rng[0], rng[1], timeout=120)
+        iter_count += 1
 
-        new_rng = get_incomplete_range()
-        if new_rng == rng:
+        new_rng = get_incomplete_range(iter_count)
+
+        if new_rng == rng:            
             break
-        rng = get_incomplete_range()
+        rng = new_rng
 
 
 def iter_next():
@@ -287,9 +296,10 @@ def iter_all():
         if result == True:
             range_start += step 
 
-
 def main():    
+    iter_past()
     iter_next()
+    # TODO option to load contrato from json file
 
 
 if __name__ == '__main__':
