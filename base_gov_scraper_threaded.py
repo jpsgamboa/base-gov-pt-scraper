@@ -1,9 +1,11 @@
 import os
-import requests
-import sqlite3
-import json
 import re
+import json
 import time
+import logging
+import sqlite3
+import datetime
+import requests
 import threading
 import contextlib
 
@@ -403,7 +405,7 @@ def iter_next():
 
     return range_start == range_limit
         
-
+        
 def main(sqlite_location, sqlite_name):
     global _sqlite_location
     global _sqlite_name
@@ -411,6 +413,8 @@ def main(sqlite_location, sqlite_name):
     _sqlite_location = sqlite_location 
     _sqlite_name = sqlite_name
 
+    logging.basicConfig(filename=os.path.join(sqlite_location, sqlite_name + "_log.log"), level=logging.INFO, format='%(asctime)s %(message)s')
+    logging.info("#### STARTING SESSION ####")
     load_contract_ids()
 
     to_continue = True
