@@ -6,8 +6,8 @@ The script creates an SQLite database to store the contracts and associated attr
 
 |Tables     |Description                            |Key
 |-----------|:-------------------------------------:|:---------------------------:|
-|contracts  |Contract information                   |`contract_id`                |
-|companies  |Company names                          | `company_id`                |
+|contracts  |Contracts information                  |`contract_id`                |
+|companies  |Companies information                  | `company_id`                |
 |contestants|Ids of the contestants of each contract| `contract_id`, `company_id` |
 |contracted |Id(s) of the contracted company(ies)   | `contract_id`, `company_id` |
 |contracting|Id of the contracting company          | `contract_id`, `company_id` |
